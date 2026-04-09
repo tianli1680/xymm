@@ -28,28 +28,42 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: 下载并保存频道列表
+      - name: 下载并保存频道列表（添加时间戳）
         run: |
           echo "正在从 http://xymm.iptvlive.icu/ 下载频道列表..."
           
-          # 使用更完整的 curl 参数
-          curl -L --max-time 30 --retry 3 -o xymm.m3u "http://xymm.iptvlive.icu/"
+          # 下载原始内容
+          curl -L --max-time 30 --retry 3 -o xymm_temp.m3u "http://xymm.iptvlive.icu/"
           
           # 验证下载内容
-          if [ ! -f xymm.m3u ]; then
+          if [ ! -f xymm_temp.m3u ]; then
             echo "错误：文件下载失败"
             exit 1
           fi
           
-          if [ ! -s xymm.m3u ]; then
+          if [ ! -s xymm_temp.m3u ]; then
             echo "错误：下载的文件为空"
             exit 1
           fi
           
+          # 获取北京时间
+          BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          # 复制原始内容并添加时间戳注释
+          cp xymm_temp.m3u xymm.m3u
+          
+          # 在文件末尾添加时间戳（M3U格式使用#开头的注释行）
+          echo "" >> xymm.m3u
+          echo "# 最后更新时间: $BEIJING_TIME (北京时间)" >> xymm.m3u
+          echo "# 更新来源: http://xymm.iptvlive.icu/" >> xymm.m3u
+          
+          # 清理临时文件
+          rm xymm_temp.m3u
+          
           echo "下载完成，文件大小："
           ls -lh xymm.m3u
-          echo "文件前几行内容预览："
-          head -n 10 xymm.m3u
+          echo "文件末尾内容预览："
+          tail -n 5 xymm.m3u
 
       - name: 提交并推送更新
         run: |
@@ -70,18 +84,16 @@ jobs:
             exit 1
           fi
           
-          # 检查是否有变更
-          git status
-          
           # 添加文件
-          git add xymm.m3u -f  # 使用 -f 强制添加
+          git add xymm.m3u -f
           
           # 检查是否有变更需要提交
           if git diff --cached --quiet; then
             echo "频道列表无变化，跳过提交"
           else
-            git commit -m "自动更新频道列表 - $(date '+%Y-%m-%d %H:%M:%S') [skip ci]"
-            # 推送到当前分支，不使用 force
+            BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+            git commit -m "自动更新频道列表 - $BEIJING_TIME [skip ci]"
+            # 推送到当前分支
             git push origin HEAD:$CURRENT_BRANCH
             echo "已成功推送更新到 $CURRENT_BRANCH 分支"
           fi
