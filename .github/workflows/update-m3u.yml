@@ -1,0 +1,60 @@
+name: update-m3u
+
+on:
+  schedule:
+    # 北京时间 07:00 和 17:00 (UTC时间 23:00 和 09:00)
+    - cron: '0 23 * * *'
+    - cron: '0 9 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  NODE_VERSION: '24'  # 环境变量适配 Node.js 24
+
+jobs:
+  download-m3u:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 授予写入权限，用于强制推送
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 下载并保存频道列表
+        run: |
+          echo "正在从 http://xymm.iptvlive.icu/ 下载频道列表..."
+          curl -L -o xymm.m3u "http://xymm.iptvlive.icu/"
+          
+          # 验证下载内容
+          if [ ! -s xymm.m3u ]; then
+            echo "错误：下载的文件为空或不存在"
+            exit 1
+          fi
+          
+          echo "下载完成，文件大小："
+          ls -lh xymm.m3u
+          echo "文件前几行内容预览："
+          head -n 5 xymm.m3u || echo "文件内容为空"
+
+      - name: 强制推送更新到仓库
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 检查是否有变更
+          if git diff --quiet xymm.m3u; then
+            echo "频道列表无变化，跳过提交"
+          else
+            git add xymm.m3u
+            git commit -m "自动更新频道列表 - $(date '+%Y-%m-%d %H:%M:%S') [skip ci]"
+            git push --force origin HEAD:main  # 强制推送到 main 分支
+            echo "已强制推送更新到仓库"
+          fi
