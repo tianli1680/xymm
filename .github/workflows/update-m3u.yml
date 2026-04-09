@@ -1,4 +1,4 @@
-name: update-m3u
+name: 更新频道列表
 
 on:
   schedule:
@@ -31,30 +31,68 @@ jobs:
       - name: 下载并保存频道列表
         run: |
           echo "正在从 http://xymm.iptvlive.icu/ 下载频道列表..."
-          curl -L -o xymm.m3u "http://xymm.iptvlive.icu/"
+          
+          # 使用更完整的 curl 参数
+          curl -L --max-time 30 --retry 3 -o xymm.m3u "http://xymm.iptvlive.icu/"
           
           # 验证下载内容
+          if [ ! -f xymm.m3u ]; then
+            echo "错误：文件下载失败"
+            exit 1
+          fi
+          
           if [ ! -s xymm.m3u ]; then
-            echo "错误：下载的文件为空或不存在"
+            echo "错误：下载的文件为空"
             exit 1
           fi
           
           echo "下载完成，文件大小："
           ls -lh xymm.m3u
           echo "文件前几行内容预览："
-          head -n 5 xymm.m3u || echo "文件内容为空"
+          head -n 10 xymm.m3u
 
-      - name: 强制推送更新到仓库
+      - name: 提交并推送更新
         run: |
+          # 配置 git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          # 获取当前分支名称
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "当前分支: $CURRENT_BRANCH"
+          
+          # 检查文件是否存在
+          if [ -f xymm.m3u ]; then
+            echo "文件 xymm.m3u 已存在"
+            ls -la xymm.m3u
+          else
+            echo "错误：文件 xymm.m3u 不存在"
+            exit 1
+          fi
+          
           # 检查是否有变更
-          if git diff --quiet xymm.m3u; then
+          git status
+          
+          # 添加文件
+          git add xymm.m3u -f  # 使用 -f 强制添加
+          
+          # 检查是否有变更需要提交
+          if git diff --cached --quiet; then
             echo "频道列表无变化，跳过提交"
           else
-            git add xymm.m3u
             git commit -m "自动更新频道列表 - $(date '+%Y-%m-%d %H:%M:%S') [skip ci]"
-            git push --force origin HEAD:main  # 强制推送到 main 分支
-            echo "已强制推送更新到仓库"
+            # 推送到当前分支，不使用 force
+            git push origin HEAD:$CURRENT_BRANCH
+            echo "已成功推送更新到 $CURRENT_BRANCH 分支"
           fi
+          
+          # 显示仓库中的文件
+          echo "仓库当前文件列表："
+          ls -la
+
+      - name: 上传文件作为工作流产物（备份）
+        uses: actions/upload-artifact@v4
+        with:
+          name: xymm-channel-list
+          path: xymm.m3u
+          retention-days: 7
